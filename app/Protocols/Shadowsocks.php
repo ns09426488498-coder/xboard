@@ -4,6 +4,7 @@ namespace App\Protocols;
 
 use App\Support\AbstractProtocol;
 use App\Models\Server;
+use App\Services\OutlineService;
 
 class Shadowsocks extends AbstractProtocol
 {
@@ -11,6 +12,7 @@ class Shadowsocks extends AbstractProtocol
 
     public $allowedProtocols = [
         Server::TYPE_SHADOWSOCKS,
+        Server::TYPE_OUTLINE,
     ];
 
     public function handle()
@@ -34,6 +36,11 @@ class Shadowsocks extends AbstractProtocol
             ) {
                 array_push($configs, self::SIP008($item, $user));
             }
+            if ($item['type'] === Server::TYPE_OUTLINE) {
+                if ($outline = self::SIP008Outline($item, $user)) {
+                    array_push($configs, $outline);
+                }
+            }
         }
 
         $subs['version'] = 1;
@@ -56,5 +63,11 @@ class Shadowsocks extends AbstractProtocol
             "method" => data_get($server, 'protocol_settings.cipher')
         ];
         return $config;
+    }
+
+    public static function SIP008Outline($server, $user)
+    {
+        $server = OutlineService::asShadowsocksServer($server['password'], $server);
+        return $server ? self::SIP008($server, $user) : null;
     }
 }

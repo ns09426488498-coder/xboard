@@ -7,6 +7,7 @@ use App\Models\ServerMachine;
 use App\Models\ServerRoute;
 use App\Models\User;
 use App\Services\Plugin\HookManager;
+use App\Services\OutlineService;
 use App\Utils\CacheKey;
 use App\Utils\Helper;
 use Illuminate\Support\Facades\Cache;
@@ -65,7 +66,9 @@ class ServerService
             ->get()
             ->append(['last_check_at', 'last_push_at', 'online', 'is_online', 'available_status', 'cache_key', 'server_key']);
 
-        $servers = collect($servers)->map(function ($server) use ($user) {
+        $outlineService = app(OutlineService::class);
+
+        $servers = collect($servers)->map(function ($server) use ($user, $outlineService) {
             // 判断动态端口
             if (str_contains($server->port, '-')) {
                 $port = $server->port;
@@ -75,8 +78,15 @@ class ServerService
                 $server->port = (int) $server->port;
             }
             $server->password = $server->generateServerPassword($user);
+            if ($server->type === Server::TYPE_OUTLINE) {
+                $accessKey = $outlineService->getOrCreateAccessKey($server, $user);
+                $server->outline_access_key = $accessKey;
+                $server->password = $accessKey['access_url'] ?? '';
+            }
             $server->rate = $server->getCurrentRate();
             return $server;
+        })->filter(function ($server) {
+            return $server->type !== Server::TYPE_OUTLINE || !blank($server->password);
         })->toArray();
 
         return $servers;
@@ -365,6 +375,10 @@ class ServerService
                 'server_port' => (int) $serverPort,
                 'transport' => data_get($protocolSettings, 'transport', 'TCP'),
                 'traffic_pattern' => $protocolSettings['traffic_pattern'],
+            ],
+            'outline' => [
+                ...$baseConfig,
+                'api_url' => data_get($protocolSettings, 'api_url'),
             ],
             default => [],
         };

@@ -5,6 +5,7 @@ namespace App\Protocols;
 use App\Utils\Helper;
 use App\Support\AbstractProtocol;
 use App\Models\Server;
+use App\Services\OutlineService;
 
 class Shadowrocket extends AbstractProtocol
 {
@@ -18,6 +19,7 @@ class Shadowrocket extends AbstractProtocol
         Server::TYPE_TUIC,
         Server::TYPE_ANYTLS,
         Server::TYPE_SOCKS,
+        Server::TYPE_OUTLINE,
     ];
 
     protected $protocolRequirements = [
@@ -66,11 +68,19 @@ class Shadowrocket extends AbstractProtocol
             if ($item['type'] === Server::TYPE_SOCKS) {
                 $uri .= self::buildSocks($item['password'], $item);
             }
+            if ($item['type'] === Server::TYPE_OUTLINE) {
+                $uri .= self::buildOutline($item['password'], $item);
+            }
         }
         return response(base64_encode($uri))
             ->header('content-type', 'text/plain');
     }
 
+    public static function buildOutline($accessUrl, $server)
+    {
+        $server = OutlineService::asShadowsocksServer($accessUrl, $server);
+        return $server ? self::buildShadowsocks($server['password'], $server) : '';
+    }
 
     public static function buildShadowsocks($password, $server)
     {

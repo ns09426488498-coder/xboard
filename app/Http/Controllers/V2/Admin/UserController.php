@@ -11,6 +11,7 @@ use App\Models\Plan;
 use App\Models\User;
 use App\Services\AuthService;
 use App\Services\NodeSyncService;
+use App\Services\OutlineService;
 use App\Services\Plugin\HookManager;
 use App\Services\UserService;
 use App\Traits\QueryOperators;
@@ -31,7 +32,7 @@ class UserController extends Controller
     {
         $user = User::find($request->input('id'));
         if (!$user)
-            return $this->fail([400202, '用户不存在']);
+            return $this->fail([400202, 'User not found']);
         $user->token = Helper::guid();
         $user->uuid = Helper::guid(true);
         $result = $user->save();
@@ -80,7 +81,7 @@ class UserController extends Controller
     // Build one filter query condition.
     private function buildFilterQuery(Builder|QueryBuilder $query, string $field, mixed $value): void
     {
-        // 处理关联查询
+        // 婵犮垼娉涚€氼噣骞冩繝鍥х閻庡湱濮崇划鎾绘煛鐏炶鍔ユい?
         if (str_contains($field, '.')) {
             if (!method_exists($query, 'whereHas')) {
                 return;
@@ -99,13 +100,13 @@ class UserController extends Controller
             return;
         }
 
-        // 处理数组值的 'in' 操作
+        // 婵犮垼娉涚€氼噣骞冩繝鍥ф瀬闁规鍠氶惌瀣煕婵犲懎浜规繛?'in' 闂佺懓鐏濈粔宕囩礊?
         if (is_array($value)) {
             $query->whereIn($field === 'group_ids' ? 'group_id' : $field, $value);
             return;
         }
 
-        // 处理基于运算符的过滤
+        // 婵犮垼娉涚€氼噣骞冩繝鍥ф槬閺夌偞澹嗛懝楣冨级閳哄倸濮夐柣锝堝吹缁參鏁傞悙顒傛殸闁哄鏅涘ú锕傚箮?
         if (!is_string($value) || !str_contains($value, ':')) {
             $query->where($field, 'like', "%{$value}%");
             return;
@@ -113,14 +114,14 @@ class UserController extends Controller
 
         [$operator, $filterValue] = explode(':', $value, 2);
 
-        // 转换数字字符串为适当的类型
+        // 闁哄鍎愰崜姘暦閺屻儱鏋侀柡澶庢硶閹界喖鎮楀☉娆樻畼妞ゆ垳鐒︾粙澶愮叓椤擄紕顦伴梻渚囧亜閸婂摜绱炵€ｎ喗鍎嶉柛鏇ㄥ弨椤箓鏌?
         if (is_numeric($filterValue)) {
             $filterValue = strpos($filterValue, '.') !== false
                 ? (float) $filterValue
                 : (int) $filterValue;
         }
 
-        // 处理计算字段
+        // 婵犮垼娉涚€氼噣骞冩繝鍕闁挎稑瀚弳顒勬倵濞戞瑯娈曟い?
         $queryField = match ($field) {
             'total_used' => DB::raw('(u + d)'),
             default => $field
@@ -218,7 +219,7 @@ class UserController extends Controller
         $request->validate([
             'id' => 'required|numeric'
         ], [
-            'id.required' => '用户ID不能为空'
+            'id.required' => 'User ID is required'
         ]);
         $user = User::find($request->input('id'))->load('invite_user');
         $user = HookManager::filter('admin.user.detail', $user, $request);
@@ -231,29 +232,29 @@ class UserController extends Controller
 
         $user = User::find($request->input('id'));
         if (!$user) {
-            return $this->fail([400202, '用户不存在']);
+            return $this->fail([400202, 'User not found']);
         }
         if (isset($params['email'])) {
             if (User::byEmail($params['email'])->first() && $user->email !== $params['email']) {
-                return $this->fail([400201, '邮箱已被使用']);
+                return $this->fail([400201, 'Email is already in use']);
             }
         }
-        // 处理密码
+        // 婵犮垼娉涚€氼噣骞冩繝鍕ㄥ亾闂堟稒顥犻柣?
         if (isset($params['password'])) {
             $params['password'] = password_hash($params['password'], PASSWORD_DEFAULT);
             $params['password_algo'] = NULL;
         } else {
             unset($params['password']);
         }
-        // 处理订阅计划
+        // 婵犮垼娉涚€氼噣骞冩繝鍕闁靛繈鍊栭～澶愭偣娴ｆ祴鍋撻崘鑼喊
         if (isset($params['plan_id'])) {
             $plan = Plan::find($params['plan_id']);
             if (!$plan) {
-                return $this->fail([400202, '订阅计划不存在']);
+                return $this->fail([400202, 'Plan not found']);
             }
             $params['group_id'] = $plan->group_id;
         }
-        // 处理邀请用户
+        // 婵犮垼娉涚€氼噣骞冩繝鍥ㄧ劷闁逞屽墰閹风姵顦版惔銏℃闂?
         if ($request->input('invite_user_email') && $inviteUser = User::byEmail($request->input('invite_user_email'))->first()) {
             $params['invite_user_id'] = $inviteUser->id;
         } else {
@@ -263,6 +264,7 @@ class UserController extends Controller
         if (isset($params['banned']) && (int) $params['banned'] === 1) {
             $authService = new AuthService($user);
             $authService->removeAllSessions();
+            app(OutlineService::class)->deleteAccessKeysForUser($user);
         }
         if (isset($params['balance'])) {
             $params['balance'] = $params['balance'] * 100;
@@ -283,7 +285,7 @@ class UserController extends Controller
             $user->update($params);
         } catch (\Exception $e) {
             Log::error($e);
-            return $this->fail([500, '保存失败']);
+            return $this->fail([500, 'Save failed']);
         }
 
         HookManager::call('admin.user.update.after', [
@@ -299,7 +301,7 @@ class UserController extends Controller
     public function dumpCSV(Request $request)
     {
         ini_set('memory_limit', '-1');
-        gc_enable(); // 启用垃圾回收
+        gc_enable(); // 闂佸憡鍑归崹鎶藉极閵堝鍨傞柛鎰╁妽缁ㄣ垽鏌涢妷褍浠﹂柡?
 
         $scopeInfo = $this->resolveScope($request);
         $scope = $scopeInfo['scope'];
@@ -307,11 +309,11 @@ class UserController extends Controller
 
         if ($scope === 'selected') {
             if (empty($userIds)) {
-                return $this->fail([422, 'user_ids不能为空']);
+                return $this->fail([422, 'user_ids is required']);
             }
         }
 
-        // 优化查询：使用with预加载plan关系，避免N+1问题
+        // 婵炴潙鍚嬮敋閻庡灚鐓″濠氬Ψ椤垵娈戦梺鎸庣⊕閻喗绻涢崶顒佸仺闁宠櫣鐗玹h婵☆偅婢樼€氼剚鎱ㄩ悙瀛樺缂佸樊婀禷n闂佺绻愮壕顓㈡焾閹绢喗鏅€光偓閸曨亞绱氶梺绋跨箰绾?1闂傚倸鍋嗛崳锝夈€?
         $query = User::query()
             ->with('plan:id,name')
             ->orderBy('id', 'asc')
@@ -336,25 +338,25 @@ class UserController extends Controller
         $filename = 'users_' . date('Y-m-d_His') . '.csv';
 
         return response()->streamDownload(function () use ($query) {
-            // 打开输出流
+            // 闂佺懓鐏氶幐鍝ユ閹寸偞缍囬柟鎯у暱濮ｅ绻?
             $output = fopen('php://output', 'w');
 
-            // 添加BOM标记，确保Excel正确显示中文
+            // 濠电儑缍€椤曆勬叏濠碘垼M闂佸搫绉村ú鈺咁敊閸ヮ剚鏅€光偓閳ь剟鍨惧Ο鑽も攳婵犲﹦顫el濠殿喗绻愮徊鍧楀灳濮椻偓瀵即宕滆娴犳稑鈽夐幙鍐ㄥ箺闁?
             fprintf($output, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
-            // 写入CSV头部
+            // 闂佸憡鍔栭悷銉╁矗閸滅櫇V婵犮垼鍩栭幐鎶藉磿?
             fputcsv($output, [
-                '邮箱',
-                '余额',
-                '推广佣金',
-                '总流量',
-                '剩余流量',
-                '套餐到期时间',
-                '订阅计划',
-                '订阅地址'
+                'Email',
+                'Balance',
+                'Commission',
+                'Total Traffic',
+                'Remaining Traffic',
+                'Plan Expire Time',
+                'Plan',
+                'Subscribe URL'
             ]);
 
-            // 分批处理数据以减少内存使用
+            // 闂佸憡甯掑Λ娆愮珶閹烘挸绶為柛鏇ㄥ幗閸婄偤鏌℃担鍝勵暭鐎规挷鐒︾粋鎺楀Ψ閵夈儲顏￠柣蹇撶箲閸ㄧ敻宕€电硶鍋撳☉娅吋绻涢崶顒佸仺?
             $query->chunk(500, function ($users) use ($output) {
                 foreach ($users as $user) {
                     try {
@@ -364,21 +366,21 @@ class UserController extends Controller
                             number_format($user->commission_balance / 100, 2),
                             Helper::trafficConvert($user->transfer_enable),
                             Helper::trafficConvert($user->transfer_enable - ($user->u + $user->d)),
-                            $user->expired_at ? date('Y-m-d H:i:s', $user->expired_at) : '长期有效',
-                            $user->plan ? $user->plan->name : '无订阅',
+                            $user->expired_at ? date('Y-m-d H:i:s', $user->expired_at) : 'Never',
+                            $user->plan ? $user->plan->name : 'No Plan',
                             Helper::getSubscribeUrl($user->token)
                         ];
                         fputcsv($output, $row);
                     } catch (\Exception $e) {
-                        Log::error('CSV导出错误: ' . $e->getMessage(), [
+                        Log::error('CSV闁诲海鏁搁崢褔宕甸銏＄叆婵炲棙甯╅崵? ' . $e->getMessage(), [
                             'user_id' => $user->id,
                             'email' => $user->email
                         ]);
-                        continue; // 继续处理下一条记录
+                        continue; // 缂傚倷缍€閸涱垱鏆版繝銏ｆ硾鐎氼噣骞冩繝鍐枖閻庯絺鏅濋閬嶆煛婢规嚎鍊ら崬鍓佹喐?
                     }
                 }
 
-                // 清理内存
+                // 濠电偞鎸搁幊鎰板箖婵犲洤绀冮柛娑卞幘閹?
                 gc_collect_cycles();
             });
 
@@ -401,7 +403,7 @@ class UserController extends Controller
             $email = $request->input('email_prefix') . '@' . $request->input('email_suffix');
 
             if (User::byEmail($email)->exists()) {
-                return $this->fail([400201, '邮箱已存在于系统中']);
+                return $this->fail([400201, 'Email already exists in the system']);
             }
 
             $userService = app(UserService::class);
@@ -413,7 +415,7 @@ class UserController extends Controller
             ]);
 
             if (!$user->save()) {
-                return $this->fail([500, '生成失败']);
+                return $this->fail([500, 'Generate failed']);
             }
             return $this->success(true);
         }
@@ -451,10 +453,10 @@ class UserController extends Controller
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
-            return $this->fail([500, '生成失败']);
+            return $this->fail([500, 'Generate failed']);
         }
 
-        // 判断是否导出 CSV
+        // 闂佸憡甯囬崐鏍蓟閸ヮ剙鍙婃い鏍ㄧ閸庡﹪鎮楅悽闈涘付闁?CSV
         if ($request->input('download_csv')) {
             $headers = [
                 'Content-Type' => 'text/csv',
@@ -462,10 +464,10 @@ class UserController extends Controller
             ];
             $callback = function () use ($users, $request) {
                 $handle = fopen('php://output', 'w');
-                fputcsv($handle, ['账号', '密码', '过期时间', 'UUID', '创建时间', '订阅地址']);
+                fputcsv($handle, ['Account', 'Password', 'Expire Time', 'UUID', 'Created At', 'Subscribe URL']);
                 foreach ($users as $user) {
                     $user = $user->refresh();
-                    $expireDate = $user['expired_at'] === NULL ? '长期有效' : date('Y-m-d H:i:s', $user['expired_at']);
+                    $expireDate = $user['expired_at'] === NULL ? 'Never' : date('Y-m-d H:i:s', $user['expired_at']);
                     $createDate = date('Y-m-d H:i:s', $user['created_at']);
                     $password = $request->input('password') ?? $user['email'];
                     $subscribeUrl = Helper::getSubscribeUrl($user['token']);
@@ -476,12 +478,12 @@ class UserController extends Controller
             return response()->streamDownload($callback, 'users.csv', $headers);
         }
 
-        // 默认返回 JSON
+        // 婵帗绋掗…鍫ヮ敇缂佹ɑ浜ら柡鍌涘缁€鈧?JSON
         $data = collect($users)->map(function ($user) use ($request) {
             return [
                 'email' => $user['email'],
                 'password' => $request->input('password') ?? $user['email'],
-                'expired_at' => $user['expired_at'] === NULL ? '长期有效' : date('Y-m-d H:i:s', $user['expired_at']),
+                'expired_at' => $user['expired_at'] === NULL ? 'Never' : date('Y-m-d H:i:s', $user['expired_at']),
                 'uuid' => $user['uuid'],
                 'created_at' => date('Y-m-d H:i:s', $user['created_at']),
                 'subscribe_url' => Helper::getSubscribeUrl($user['token']),
@@ -489,7 +491,7 @@ class UserController extends Controller
         });
         return response()->json([
             'code' => 0,
-            'message' => '批量生成成功',
+            'message' => 'Batch generated successfully',
             'data' => $data,
         ]);
     }
@@ -506,7 +508,7 @@ class UserController extends Controller
         for ($i = 1; $i <= $generateCount; $i++) {
             $email = $emailPrefix . '_' . $i . '@' . $emailSuffix;
             if (User::where('email', $email)->exists()) {
-                return $this->fail([400201, '邮箱 ' . $email . ' 已存在于系统中']);
+                return $this->fail([400201, 'Email ' . $email . ' already exists in the system']);
             }
         }
 
@@ -532,10 +534,10 @@ class UserController extends Controller
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
-            return $this->fail([500, '生成失败']);
+            return $this->fail([500, 'Generate failed']);
         }
 
-        // 判断是否导出 CSV
+        // 闂佸憡甯囬崐鏍蓟閸ヮ剙鍙婃い鏍ㄧ閸庡﹪鎮楅悽闈涘付闁?CSV
         if ($request->input('download_csv')) {
             $headers = [
                 'Content-Type' => 'text/csv',
@@ -543,10 +545,10 @@ class UserController extends Controller
             ];
             $callback = function () use ($users, $request) {
                 $handle = fopen('php://output', 'w');
-                fputcsv($handle, ['账号', '密码', '过期时间', 'UUID', '创建时间', '订阅地址']);
+                fputcsv($handle, ['Account', 'Password', 'Expire Time', 'UUID', 'Created At', 'Subscribe URL']);
                 foreach ($users as $user) {
                     $user = $user->refresh();
-                    $expireDate = $user['expired_at'] === NULL ? '长期有效' : date('Y-m-d H:i:s', $user['expired_at']);
+                    $expireDate = $user['expired_at'] === NULL ? 'Never' : date('Y-m-d H:i:s', $user['expired_at']);
                     $createDate = date('Y-m-d H:i:s', $user['created_at']);
                     $password = $request->input('password') ?? $user['email'];
                     $subscribeUrl = Helper::getSubscribeUrl($user['token']);
@@ -557,12 +559,12 @@ class UserController extends Controller
             return response()->streamDownload($callback, 'users.csv', $headers);
         }
 
-        // 默认返回 JSON
+        // 婵帗绋掗…鍫ヮ敇缂佹ɑ浜ら柡鍌涘缁€鈧?JSON
         $data = collect($users)->map(function ($user) use ($request) {
             return [
                 'email' => $user['email'],
                 'password' => $request->input('password') ?? $user['email'],
-                'expired_at' => $user['expired_at'] === NULL ? '长期有效' : date('Y-m-d H:i:s', $user['expired_at']),
+                'expired_at' => $user['expired_at'] === NULL ? 'Never' : date('Y-m-d H:i:s', $user['expired_at']),
                 'uuid' => $user['uuid'],
                 'created_at' => date('Y-m-d H:i:s', $user['created_at']),
                 'subscribe_url' => Helper::getSubscribeUrl($user['token']),
@@ -570,7 +572,7 @@ class UserController extends Controller
         });
         return response()->json([
             'code' => 0,
-            'message' => '批量生成成功',
+            'message' => 'Batch generated successfully',
             'data' => $data,
         ]);
     }
@@ -584,7 +586,7 @@ class UserController extends Controller
 
         if ($scope === 'selected') {
             if (empty($userIds)) {
-                return $this->fail([422, 'user_ids不能为空']);
+                return $this->fail([422, 'user_ids is required']);
             }
         }
 
@@ -654,7 +656,7 @@ class UserController extends Controller
 
         if ($scope === 'selected') {
             if (empty($userIds)) {
-                return $this->fail([422, 'user_ids不能为空']);
+                return $this->fail([422, 'user_ids is required']);
             }
         }
 
@@ -675,9 +677,10 @@ class UserController extends Controller
             $builder->update([
                 'banned' => 1
             ]);
+            $this->cleanupOutlineKeysForScope($scope, $userIds, $request, $sort, $sortType);
         } catch (\Exception $e) {
             Log::error($e);
-            return $this->fail([500, '处理失败']);
+            return $this->fail([500, '婵犮垼娉涚€氼噣骞冩繝鍐ㄧ窞閺夊牜鍋夎']);
         }
         // Full refresh not implemented.
         return $this->success(true);
@@ -689,8 +692,8 @@ class UserController extends Controller
         $request->validate([
             'id' => 'required|exists:App\Models\User,id'
         ], [
-            'id.required' => '用户ID不能为空',
-            'id.exists' => '用户不存在'
+            'id.required' => 'User ID is required',
+            'id.exists' => 'User not found'
         ]);
         $user = User::find($request->input('id'));
         HookManager::call('admin.user.destroy.before', [
@@ -700,6 +703,7 @@ class UserController extends Controller
 
         try {
             DB::beginTransaction();
+            app(OutlineService::class)->deleteAccessKeysForUser($user, true);
             $user->orders()->delete();
             $user->codes()->delete();
             $user->stat()->delete();
@@ -716,7 +720,26 @@ class UserController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error($e);
-            return $this->fail([500, '删除失败']);
+            return $this->fail([500, 'Delete failed']);
         }
+    }
+
+    private function cleanupOutlineKeysForScope(string $scope, array $userIds, Request $request, string $sort, string $sortType): void
+    {
+        $builder = User::query()->orderBy('id', 'desc');
+
+        if ($scope === 'filtered') {
+            $builder->orderBy($sort, $sortType);
+            $this->applyFiltersAndSorts($request, $builder);
+        } elseif ($scope === 'selected') {
+            $builder->whereIn('id', $userIds);
+        }
+
+        $outlineService = app(OutlineService::class);
+        $builder->select(['id'])->chunkById(200, function ($users) use ($outlineService) {
+            foreach ($users as $user) {
+                $outlineService->deleteAccessKeysForUser($user->id);
+            }
+        });
     }
 }

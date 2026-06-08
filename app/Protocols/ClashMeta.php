@@ -3,6 +3,7 @@
 namespace App\Protocols;
 
 use App\Models\Server;
+use App\Services\OutlineService;
 use App\Utils\Helper;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Yaml\Yaml;
@@ -25,6 +26,7 @@ class ClashMeta extends AbstractProtocol
         Server::TYPE_SOCKS,
         Server::TYPE_HTTP,
         Server::TYPE_MIERU,
+        Server::TYPE_OUTLINE,
     ];
 
     protected $protocolRequirements = [
@@ -194,6 +196,12 @@ class ClashMeta extends AbstractProtocol
                 array_push($proxy, self::buildMieru($item['password'], $item));
                 array_push($proxies, $item['name']);
             }
+            if ($item['type'] === Server::TYPE_OUTLINE) {
+                if ($outline = self::buildOutline($item['password'], $item)) {
+                    array_push($proxy, $outline);
+                    array_push($proxies, $item['name']);
+                }
+            }
         }
 
         $config['proxies'] = array_merge($config['proxies'] ? $config['proxies'] : [], $proxy);
@@ -325,6 +333,24 @@ class ClashMeta extends AbstractProtocol
             }
         }
         return $array;
+    }
+
+    public static function buildOutline($accessUrl, $server)
+    {
+        $parsed = OutlineService::parseAccessUrl($accessUrl);
+        if (!$parsed) {
+            return null;
+        }
+
+        return [
+            'name' => $server['name'],
+            'type' => 'ss',
+            'server' => $parsed['host'],
+            'port' => $parsed['port'],
+            'cipher' => $parsed['method'],
+            'password' => $parsed['password'],
+            'udp' => true,
+        ];
     }
 
     public static function buildVmess($uuid, $server)

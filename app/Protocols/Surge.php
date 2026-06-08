@@ -6,6 +6,7 @@ use App\Utils\Helper;
 use Illuminate\Support\Facades\File;
 use App\Support\AbstractProtocol;
 use App\Models\Server;
+use App\Services\OutlineService;
 
 class Surge extends AbstractProtocol
 {
@@ -21,6 +22,7 @@ class Surge extends AbstractProtocol
         Server::TYPE_ANYTLS,
         Server::TYPE_SOCKS,
         Server::TYPE_HTTP,
+        Server::TYPE_OUTLINE,
     ];
     protected $protocolRequirements = [
         'surge.hysteria.protocol_settings.version' => [2 => '2398'],
@@ -75,6 +77,12 @@ class Surge extends AbstractProtocol
                 $proxies .= self::buildHttp($item['password'], $item);
                 $proxyGroup .= $item['name'] . ', ';
             }
+            if ($item['type'] === Server::TYPE_OUTLINE) {
+                if ($outline = self::buildOutline($item['password'], $item)) {
+                    $proxies .= $outline;
+                    $proxyGroup .= $item['name'] . ', ';
+                }
+            }
         }
 
 
@@ -103,6 +111,11 @@ class Surge extends AbstractProtocol
             ->header('content-disposition', "attachment;filename*=UTF-8''" . rawurlencode($appName) . ".conf");
     }
 
+    public static function buildOutline($accessUrl, $server)
+    {
+        $server = OutlineService::asShadowsocksServer($accessUrl, $server);
+        return $server ? self::buildShadowsocks($server['password'], $server) : '';
+    }
 
     public static function buildShadowsocks($password, $server)
     {

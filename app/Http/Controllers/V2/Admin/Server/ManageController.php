@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ServerSave;
 use App\Models\Server;
 use App\Models\ServerGroup;
+use App\Services\OutlineService;
 use App\Services\ServerService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -120,8 +121,16 @@ class ManageController extends Controller
         if (!$server) {
             return $this->fail([400202, '服务器不存在']);
         }
-        if ($server->delete() === false) {
-            return $this->fail([500, '删除失败']);
+        try {
+            if ($server->type === Server::TYPE_OUTLINE) {
+                app(OutlineService::class)->deleteAccessKeysForServer($server, true);
+            }
+            if ($server->delete() === false) {
+                return $this->fail([500, '删除失败']);
+            }
+        } catch (\Throwable $e) {
+            Log::error($e);
+            return $this->fail([500, 'Outline 密钥删除失败，已阻止删除节点，请确认 Outline API 可访问后重试']);
         }
 
         return $this->success(true);
@@ -145,6 +154,12 @@ class ManageController extends Controller
         }
 
         try {
+            $outlineService = app(OutlineService::class);
+            Server::whereIn('id', $ids)
+                ->where('type', Server::TYPE_OUTLINE)
+                ->get()
+                ->each(fn(Server $server) => $outlineService->deleteAccessKeysForServer($server, true));
+
             $deleted = Server::whereIn('id', $ids)->delete();
             if ($deleted === false) {
                 return $this->fail([500, '批量删除失败']);

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class SubscribeTemplate extends Model
 {
@@ -20,9 +21,17 @@ class SubscribeTemplate extends Model
     {
         $cacheKey = self::$cachePrefix . $name;
 
-        return Cache::store('redis')->remember($cacheKey, 3600, function () use ($name) {
+        try {
+            return Cache::store('redis')->remember($cacheKey, 3600, function () use ($name) {
+                return self::where('name', $name)->value('content');
+            });
+        } catch (\Throwable $e) {
+            Log::warning('Subscribe template cache fallback to database', [
+                'name' => $name,
+                'error' => $e->getMessage(),
+            ]);
             return self::where('name', $name)->value('content');
-        });
+        }
     }
 
     public static function setContent(string $name, ?string $content): void

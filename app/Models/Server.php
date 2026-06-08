@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Cache;
 use App\Utils\CacheKey;
 use App\Utils\Helper;
 use App\Models\User;
+use App\Services\OutlineService;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 
 /**
@@ -70,6 +71,7 @@ class Server extends Model
     public const TYPE_NAIVE = 'naive';
     public const TYPE_HTTP = 'http';
     public const TYPE_MIERU = 'mieru';
+    public const TYPE_OUTLINE = 'outline';
     public const STATUS_OFFLINE = 0;
     public const STATUS_ONLINE_NO_PUSH = 1;
     public const STATUS_ONLINE = 2;
@@ -108,6 +110,7 @@ class Server extends Model
         self::TYPE_NAIVE,
         self::TYPE_HTTP,
         self::TYPE_MIERU,
+        self::TYPE_OUTLINE,
     ];
 
     protected $table = 'v2_server';
@@ -320,6 +323,13 @@ class Server extends Model
             'transport' => ['type' => 'string', 'default' => 'TCP'],
             'traffic_pattern' => ['type' => 'string', 'default' => ''],
             ...self::MULTIPLEX_CONFIGURATION,
+        ],
+        self::TYPE_OUTLINE => [
+            'api_url' => ['type' => 'string', 'default' => null],
+            'cert_sha256' => ['type' => 'string', 'default' => null],
+            'verify_tls' => ['type' => 'boolean', 'default' => false],
+            'key_name_pattern' => ['type' => 'string', 'default' => 'xboard-user-{id}'],
+            'data_limit_mode' => ['type' => 'string', 'default' => 'user_remaining'],
         ]
     ];
 
@@ -372,6 +382,10 @@ class Server extends Model
 
     public function generateServerPassword(User $user): string
     {
+        if ($this->type === self::TYPE_OUTLINE) {
+            return '';
+        }
+
         if ($this->type !== self::TYPE_SHADOWSOCKS) {
             return $user->uuid;
         }
@@ -402,6 +416,19 @@ class Server extends Model
 
     public function getAvailableStatusAttribute(): int
     {
+        if ($this->type === self::TYPE_OUTLINE) {
+            $cacheKey = "outline-server-status-{$this->id}-{$this->updated_at}";
+            return Cache::remember($cacheKey, 60, function () {
+                if (!app(OutlineService::class)->isReachable($this)) {
+                    return self::STATUS_OFFLINE;
+                }
+
+                return $this->online > 0
+                    ? self::STATUS_ONLINE
+                    : self::STATUS_ONLINE_NO_PUSH;
+            });
+        }
+
         $now = time();
         if (!$this->last_check_at || ($now - self::CHECK_INTERVAL) >= $this->last_check_at) {
             return self::STATUS_OFFLINE;
@@ -486,6 +513,10 @@ class Server extends Model
     {
         return Attribute::make(
             get: function () {
+                if ($this->type === self::TYPE_OUTLINE) {
+                    return $this->available_status === self::STATUS_OFFLINE ? 0 : 1;
+                }
+
                 return (time() - 300 > $this->last_check_at) ? 0 : 1;
             }
         );

@@ -4,6 +4,7 @@ namespace App\Protocols;
 
 use App\Support\AbstractProtocol;
 use App\Models\Server;
+use App\Services\OutlineService;
 
 class Loon extends AbstractProtocol
 {
@@ -16,6 +17,7 @@ class Loon extends AbstractProtocol
         Server::TYPE_HYSTERIA,
         Server::TYPE_VLESS,
         Server::TYPE_ANYTLS,
+        Server::TYPE_OUTLINE,
     ];
 
     protected $protocolRequirements = [
@@ -51,12 +53,20 @@ class Loon extends AbstractProtocol
             if ($item['type'] === Server::TYPE_ANYTLS) {
                 $uri .= self::buildAnyTLS($item['password'], $item);
             }
+            if ($item['type'] === Server::TYPE_OUTLINE) {
+                $uri .= self::buildOutline($item['password'], $item);
+            }
         }
         return response($uri)
             ->header('content-type', 'text/plain')
             ->header('Subscription-Userinfo', "upload={$user['u']}; download={$user['d']}; total={$user['transfer_enable']}; expire={$user['expired_at']}");
     }
 
+    public static function buildOutline($accessUrl, $server)
+    {
+        $server = OutlineService::asShadowsocksServer($accessUrl, $server);
+        return $server ? self::buildShadowsocks($server['password'], $server) : '';
+    }
 
     public static function buildShadowsocks($password, $server)
     {

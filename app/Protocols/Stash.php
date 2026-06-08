@@ -7,6 +7,7 @@ use App\Utils\Helper;
 use Illuminate\Support\Facades\File;
 use App\Support\AbstractProtocol;
 use App\Models\Server;
+use App\Services\OutlineService;
 
 class Stash extends AbstractProtocol
 {
@@ -21,6 +22,7 @@ class Stash extends AbstractProtocol
         Server::TYPE_ANYTLS,
         Server::TYPE_SOCKS,
         Server::TYPE_HTTP,
+        Server::TYPE_OUTLINE,
     ];
     protected $protocolRequirements = [
         // Global rules applied regardless of client version (features Stash never supports)
@@ -135,6 +137,12 @@ class Stash extends AbstractProtocol
                 array_push($proxy, self::buildHttp($item['password'], $item));
                 array_push($proxies, $item['name']);
             }
+            if ($item['type'] === Server::TYPE_OUTLINE) {
+                if ($outline = self::buildOutline($item['password'], $item)) {
+                    array_push($proxy, $outline);
+                    array_push($proxies, $item['name']);
+                }
+            }
         }
 
         $config['proxies'] = array_merge($config['proxies'] ? $config['proxies'] : [], $proxy);
@@ -176,6 +184,12 @@ class Stash extends AbstractProtocol
             ->header('subscription-userinfo', "upload={$user['u']}; download={$user['d']}; total={$user['transfer_enable']}; expire={$user['expired_at']}")
             ->header('profile-update-interval', '24')
             ->header('content-disposition', 'attachment;filename*=UTF-8\'\'' . rawurlencode($appName));
+    }
+
+    public static function buildOutline($accessUrl, $server)
+    {
+        $server = OutlineService::asShadowsocksServer($accessUrl, $server);
+        return $server ? self::buildShadowsocks($server['password'], $server) : null;
     }
 
     public static function buildShadowsocks($uuid, $server)

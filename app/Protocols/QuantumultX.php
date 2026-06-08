@@ -5,6 +5,7 @@ namespace App\Protocols;
 use App\Utils\Helper;
 use App\Support\AbstractProtocol;
 use App\Models\Server;
+use App\Services\OutlineService;
 
 class QuantumultX extends AbstractProtocol
 {
@@ -17,6 +18,7 @@ class QuantumultX extends AbstractProtocol
         Server::TYPE_ANYTLS,
         Server::TYPE_SOCKS,
         Server::TYPE_HTTP,
+        Server::TYPE_OUTLINE,
     ];
 
     public function handle()
@@ -33,12 +35,19 @@ class QuantumultX extends AbstractProtocol
                 Server::TYPE_ANYTLS => self::buildAnyTLS($item['password'], $item),
                 Server::TYPE_SOCKS => self::buildSocks5($item['password'], $item),
                 Server::TYPE_HTTP => self::buildHttp($item['password'], $item),
+                Server::TYPE_OUTLINE => self::buildOutline($item['password'], $item),
                 default => ''
             };
         }
         return response(base64_encode($uri))
             ->header('content-type', 'text/plain')
             ->header('subscription-userinfo', "upload={$user['u']}; download={$user['d']}; total={$user['transfer_enable']}; expire={$user['expired_at']}");
+    }
+
+    public static function buildOutline($accessUrl, $server)
+    {
+        $server = OutlineService::asShadowsocksServer($accessUrl, $server);
+        return $server ? self::buildShadowsocks($server['password'], $server) : '';
     }
 
     public static function buildShadowsocks($password, $server)

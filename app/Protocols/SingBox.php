@@ -5,6 +5,8 @@ use App\Utils\Helper;
 use Illuminate\Support\Arr;
 use App\Support\AbstractProtocol;
 use App\Models\Server;
+use App\Services\OutlineService;
+use Illuminate\Support\Facades\File;
 use Log;
 
 class SingBox extends AbstractProtocol
@@ -20,6 +22,7 @@ class SingBox extends AbstractProtocol
         Server::TYPE_ANYTLS,
         Server::TYPE_SOCKS,
         Server::TYPE_HTTP,
+        Server::TYPE_OUTLINE,
     ];
     private $config;
     const CUSTOM_TEMPLATE_FILE = 'resources/rules/custom.sing-box.json';
@@ -128,8 +131,31 @@ class SingBox extends AbstractProtocol
     protected function loadConfig()
     {
         $jsonData = subscribe_template('singbox');
+        $config = is_array($jsonData) ? $jsonData : json_decode($jsonData, true);
 
-        return is_array($jsonData) ? $jsonData : json_decode($jsonData, true);
+        if (is_array($config)) {
+            return $config;
+        }
+
+        Log::warning('Invalid sing-box subscribe template, fallback to default file', [
+            'template_type' => gettype($jsonData),
+            'json_last_error' => json_last_error_msg(),
+        ]);
+
+        $defaultTemplatePath = base_path(self::DEFAULT_TEMPLATE_FILE);
+        if (!File::exists($defaultTemplatePath)) {
+            return [
+                'outbounds' => [],
+                'route' => ['rules' => []],
+            ];
+        }
+
+        $fallback = json_decode(File::get($defaultTemplatePath), true);
+
+        return is_array($fallback) ? $fallback : [
+            'outbounds' => [],
+            'route' => ['rules' => []],
+        ];
     }
 
     protected function buildOutbounds()
@@ -177,6 +203,11 @@ class SingBox extends AbstractProtocol
                 $httpConfig = $this->buildHttp($this->user['uuid'], $item);
                 $proxies[] = $httpConfig;
             }
+            if ($item['type'] === Server::TYPE_OUTLINE) {
+                if ($outlineConfig = $this->buildOutline($item['password'], $item)) {
+                    $proxies[] = $outlineConfig;
+                }
+            }
         }
         foreach ($outbounds as &$outbound) {
             if (!in_array($outbound['type'], ['urltest', 'selector'])) {
@@ -218,6 +249,12 @@ class SingBox extends AbstractProtocol
         $outbounds = array_merge($outbounds, $proxies);
         $this->config['outbounds'] = $outbounds;
         return $outbounds;
+    }
+
+    public function buildOutline($accessUrl, $server)
+    {
+        $server = OutlineService::asShadowsocksServer($accessUrl, $server);
+        return $server ? $this->buildShadowsocks($server['password'], $server) : null;
     }
 
     /**

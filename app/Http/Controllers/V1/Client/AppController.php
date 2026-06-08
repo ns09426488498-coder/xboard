@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\V1\Client;
 
 use App\Http\Controllers\Controller;
+use App\Services\OutlineService;
 use App\Services\ServerService;
 use App\Services\UserService;
 use Illuminate\Http\Request;
@@ -16,8 +17,10 @@ class AppController extends Controller
         $servers = [];
         $user = $request->user();
         $userService = new UserService();
-        if ($userService->isAvailable($user)) {
+        if ($userService->isAvailable($user) && $user->getRemainingTraffic() > 0) {
             $servers = ServerService::getAvailableServers($user);
+        } else {
+            app(OutlineService::class)->deleteAccessKeysForUser($user);
         }
         $defaultConfig = base_path() . '/resources/rules/app.clash.yaml';
         $customConfig = base_path() . '/resources/rules/custom.app.clash.yaml';
@@ -49,6 +52,12 @@ class AppController extends Controller
             if ($item['type'] === 'trojan') {
                 array_push($proxy, \App\Protocols\Clash::buildTrojan($user['uuid'], $item));
                 array_push($proxies, $item['name']);
+            }
+            if ($item['type'] === 'outline') {
+                if ($outline = \App\Protocols\Clash::buildOutline($item['password'], $item)) {
+                    array_push($proxy, $outline);
+                    array_push($proxies, $item['name']);
+                }
             }
         }
 

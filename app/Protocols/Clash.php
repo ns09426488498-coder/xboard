@@ -3,6 +3,7 @@
 namespace App\Protocols;
 
 use App\Models\Server;
+use App\Services\OutlineService;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Yaml\Yaml;
 use App\Support\AbstractProtocol;
@@ -19,6 +20,7 @@ class Clash extends AbstractProtocol
         Server::TYPE_TROJAN,
         Server::TYPE_SOCKS,
         Server::TYPE_HTTP,
+        Server::TYPE_OUTLINE,
     ];
     public function handle()
     {
@@ -62,6 +64,12 @@ class Clash extends AbstractProtocol
             if ($item['type'] === Server::TYPE_HTTP) {
                 array_push($proxy, self::buildHttp($item['password'], $item));
                 array_push($proxies, $item['name']);
+            }
+            if ($item['type'] === Server::TYPE_OUTLINE) {
+                if ($outline = self::buildOutline($item['password'], $item)) {
+                    array_push($proxy, $outline);
+                    array_push($proxies, $item['name']);
+                }
             }
         }
 
@@ -174,6 +182,24 @@ class Clash extends AbstractProtocol
             }
         }
         return $array;
+    }
+
+    public static function buildOutline($accessUrl, $server)
+    {
+        $parsed = OutlineService::parseAccessUrl($accessUrl);
+        if (!$parsed) {
+            return null;
+        }
+
+        return [
+            'name' => $server['name'],
+            'type' => 'ss',
+            'server' => $parsed['host'],
+            'port' => $parsed['port'],
+            'cipher' => $parsed['method'],
+            'password' => $parsed['password'],
+            'udp' => true,
+        ];
     }
 
     public static function buildVmess($uuid, $server)

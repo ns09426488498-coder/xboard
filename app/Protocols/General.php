@@ -3,6 +3,7 @@
 namespace App\Protocols;
 
 use App\Models\Server;
+use App\Services\OutlineService;
 use App\Utils\Helper;
 use Illuminate\Support\Arr;
 use App\Support\AbstractProtocol;
@@ -21,6 +22,7 @@ class General extends AbstractProtocol
         Server::TYPE_SOCKS,
         Server::TYPE_TUIC,
         Server::TYPE_HTTP,
+        Server::TYPE_OUTLINE,
     ];
 
     protected $protocolRequirements = [
@@ -45,6 +47,7 @@ class General extends AbstractProtocol
                 Server::TYPE_SOCKS => self::buildSocks($item['password'], $item),
                 Server::TYPE_TUIC => self::buildTuic($item['password'], $item),
                 Server::TYPE_HTTP => self::buildHttp($item['password'], $item),
+                Server::TYPE_OUTLINE => self::buildOutline($item['password'], $item),
                 default => '',
             };
         }
@@ -72,6 +75,14 @@ class General extends AbstractProtocol
         }
         $url .= "#{$name}\r\n";
         return $url;
+    }
+
+    public static function buildOutline($accessUrl, $server)
+    {
+        if (!$accessUrl) {
+            return '';
+        }
+        return OutlineService::accessUrlWithName($accessUrl, $server['name']) . "\r\n";
     }
 
     public static function buildVmess($uuid, $server)

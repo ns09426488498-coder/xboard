@@ -6,6 +6,7 @@ use App\Utils\Helper;
 use Illuminate\Support\Facades\File;
 use App\Support\AbstractProtocol;
 use App\Models\Server;
+use App\Services\OutlineService;
 
 class Surfboard extends AbstractProtocol
 {
@@ -15,6 +16,7 @@ class Surfboard extends AbstractProtocol
         Server::TYPE_VMESS,
         Server::TYPE_TROJAN,
         Server::TYPE_ANYTLS,
+        Server::TYPE_OUTLINE,
     ];
     const CUSTOM_TEMPLATE_FILE = 'resources/rules/custom.surfboard.conf';
     const DEFAULT_TEMPLATE_FILE = 'resources/rules/default.surfboard.conf';
@@ -64,6 +66,12 @@ class Surfboard extends AbstractProtocol
                 $proxies .= self::buildAnyTLS($item['password'], $item);
                 $proxyGroup .= $item['name'] . ', ';
             }
+            if ($item['type'] === Server::TYPE_OUTLINE) {
+                if ($outline = self::buildOutline($item['password'], $item)) {
+                    $proxies .= $outline;
+                    $proxyGroup .= $item['name'] . ', ';
+                }
+            }
         }
 
         $config = subscribe_template('surfboard');
@@ -89,6 +97,11 @@ class Surfboard extends AbstractProtocol
             ->header('content-disposition', "attachment;filename*=UTF-8''" . rawurlencode($appName) . ".conf");
     }
 
+    public static function buildOutline($accessUrl, $server)
+    {
+        $server = OutlineService::asShadowsocksServer($accessUrl, $server);
+        return $server ? self::buildShadowsocks($server['password'], $server) : '';
+    }
 
     public static function buildShadowsocks($password, $server)
     {

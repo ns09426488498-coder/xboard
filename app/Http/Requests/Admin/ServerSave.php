@@ -4,6 +4,7 @@
 namespace App\Http\Requests\Admin;
 
 use App\Models\Server;
+use App\Services\OutlineService;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ServerSave extends FormRequest
@@ -106,6 +107,13 @@ class ServerSave extends FormRequest
             'tls' => 'nullable|array',
             'alpn' => 'nullable|string',
             'padding_scheme' => 'nullable|array',
+        ],
+        'outline' => [
+            'api_url' => 'nullable|url',
+            'cert_sha256' => 'nullable|string',
+            'verify_tls' => 'nullable|boolean',
+            'key_name_pattern' => 'nullable|string',
+            'data_limit_mode' => 'nullable|string|in:none,user_total,user_remaining',
         ],
     ];
 
@@ -237,6 +245,39 @@ class ServerSave extends FormRequest
         }
 
         return $rules;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->input('type') !== Server::TYPE_OUTLINE) {
+            return;
+        }
+
+        $settings = $this->input('protocol_settings', []);
+        if (!is_array($settings)) {
+            $settings = [];
+        }
+
+        $parsed = OutlineService::parseManagerConfig($this->input('host'));
+        if (!empty($parsed['api_url'])) {
+            $settings['api_url'] = $parsed['api_url'];
+            $settings['cert_sha256'] = $parsed['cert_sha256'] ?? ($settings['cert_sha256'] ?? null);
+        } else {
+            $parsed = OutlineService::parseManagerConfig($settings['api_url'] ?? null);
+            if (!empty($parsed['api_url'])) {
+                $settings['api_url'] = $parsed['api_url'];
+                $settings['cert_sha256'] = $parsed['cert_sha256'] ?? ($settings['cert_sha256'] ?? null);
+            }
+        }
+
+        $this->merge([
+            'host' => $settings['api_url'] ?? $this->input('host'),
+            'port' => $this->input('port', 0) ?: 0,
+            'server_port' => $this->input('server_port', 0) ?: 0,
+            'parent_id' => $this->input('parent_id', 0) ?: 0,
+            'route_ids' => $this->input('route_ids', []),
+            'protocol_settings' => array_merge(['data_limit_mode' => 'user_remaining'], $settings),
+        ]);
     }
 
     public function attributes(): array
